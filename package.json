@@ -1,6 +1,6 @@
 {
   "name": "homebridge-cg-smarthouse-platform",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Homebridge plugin for Carlo Gavazzi SmartHouse",
   "main": "index.js",
   "scripts": {
