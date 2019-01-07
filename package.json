@@ -1,0 +1,33 @@
+{
+  "name": "homebridge-cg-smarthouse-platform",
+  "version": "1.0.0",
+  "description": "Homebridge plugin for Carlo Gavazzi SmartHouse",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thosoren/homebridge-cg-smarthouse-platform.git"
+  },
+  "keywords": [
+    "homebridge",
+    "homebridge-plugin",
+    "carlo",
+    "gavazzi",
+    "smarthouse"
+  ],
+  "engines": {
+    "node": ">=0.12.0",
+    "homebridge": ">=0.2.0"
+  },
+  "author": "Thomas Sørensen",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/thosoren/homebridge-cg-smarthouse-platform/issues"
+  },
+  "homepage": "https://github.com/thosoren/homebridge-cg-smarthouse-platform#readme",
+  "dependencies": {
+    "request": "^2.88.0"
+  }
+}
