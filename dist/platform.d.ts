@@ -1,0 +1,21 @@
+import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
+import type { CGSmarthouseConfig } from './types.js';
+export declare class CGSmarthousePlatform implements DynamicPlatformPlugin {
+    readonly log: Logging;
+    readonly config: PlatformConfig & CGSmarthouseConfig;
+    readonly api: API;
+    readonly Service: typeof Service;
+    readonly Characteristic: typeof Characteristic;
+    readonly accessories: PlatformAccessory[];
+    private readonly httpClient;
+    private sessionCookie;
+    private isAuthenticated;
+    constructor(log: Logging, config: PlatformConfig & CGSmarthouseConfig, api: API);
+    configureAccessory(accessory: PlatformAccessory): void;
+    discoverDevices(): Promise<void>;
+    private createAccessoryHandler;
+    private authenticate;
+    sendCommand(paramid: number, value: number | boolean): Promise<boolean>;
+    getDeviceStatus(paramid: number, type: string): Promise<number | boolean>;
+}
+//# sourceMappingURL=platform.d.ts.map

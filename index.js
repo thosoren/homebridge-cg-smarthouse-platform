@@ -1,26 +1,6 @@
 var Service, Characteristic;
 const request = require('request');
 
-
-/* CONFIG
-"platforms": [
-	{
-		"platform" : "CG Smarthouse",
-		"name" : "CG Smarthouse",
-		"username" : "admin",
-		"password" : "admin",
-		"url" : "http://192.168.3.135",
-		"accessories" : [
-			{
-				"paramid" : 1234,
-				"type" : "switch",
-				"name" : "Bathroom light"
-			}
-		]
-	}    
-]
-*/
-
 module.exports = function (homebridge) {
 	Service = homebridge.hap.Service;
 	Characteristic = homebridge.hap.Characteristic;
@@ -41,7 +21,17 @@ CGSmarthouse.prototype = {
 	accessories: function(callback) {
 		var foundAccessories = this.config.accessories;
 		var myAccessories = [];
+
+		// midlertidig: bare støtt disse typene
+    	var allowedTypes = ['light', 'dimmable-light'];
+
 		for(var i=0; i < foundAccessories.length; i++) {
+			this.log('Found accessory: ' + foundAccessories[i].name + ' of type ' + foundAccessories[i].type) + 'allowedTypes.indexOf=' + allowedTypes.indexOf(foundAccessories[i].type);
+			if (allowedTypes.indexOf(foundAccessories[i].type) === -1) {
+				this.log("Skipping accessory '" + foundAccessories[i].name + "' of unsupported type '" + foundAccessories[i].type + "'");
+				continue;
+			}
+
 			if(this.isValidAccessory(foundAccessories[i].type)) {
 				var accessory = new CGAccessory(this.log, this.config.url, foundAccessories[i],this);
 				this.log('Created ' + accessory.name + ' Accessory');
@@ -86,89 +76,96 @@ CGSmarthouse.prototype = {
 	},
 
 	getStatuses: function() {
-
 		var me = this;
-		var statusUrlParams = "/refresh.php?";
-		var counter = 0;
 
-		//obj key kontains type and paramid seperated by underscore, example 'light_1234'
-		for(var key in me.statusCallbacks) {
-			var split = key.split('_');
-			
-			statusUrlParams += 'param[' + counter + '][]=switch' + split[1] + '&param[' + counter + '][]=' + split[1] + '&param[' + counter + '][]=switch&'
-			
-			counter++;
+		// Hvis ingen callbacks venter, gjør ingenting
+		if (!me.statusCallbacks || Object.keys(me.statusCallbacks).length === 0) {
+			return;
 		}
 
-		request({
-			url: me.config.url + statusUrlParams,
-			method: 'GET',
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-				"Cookie" : me.cookie
-			}
-		}, 
-		function (error, response, body) {
-			//TODO: Check if new login is needed
-			//me.log("body:" + body);
+		// DEV-MODUS: IKKE kall CG, bare returner defaults raskt
+		me.log('DEV getStatuses: returning stubbed values, no HTTP call');
 
+		for (var key in me.statusCallbacks) {
+			if (!me.statusCallbacks.hasOwnProperty(key)) continue;
 
-			if (error) {
-				me.log('STATUS: ',response);
-				me.log(error.message);
-				return next(error);
+			var split = key.split('_');
+			var type = split[0];
+
+			var fallback;
+
+			if (type === 'light') {
+				fallback = false; // av
+			} else if (type === 'dimmable-light') {
+				fallback = typeof me.statusCallbacks[key]['prevvalue'] !== 'undefined'
+					? me.statusCallbacks[key]['prevvalue']
+					: 50; // midt på treet
+			} else if (type === 'temp' || type === 'targettemperature') {
+				fallback = 20; // 20°C
+			} else if (type === 'heatingcoolingstate' || type === 'targetheatingcoolingstate') {
+				fallback = 0; // off
 			} else {
-				var json = JSON.parse(body);
-				me.log(json);
-				for(var key in me.statusCallbacks) {
-					var split = key.split('_');
-					var type = split[0];
-					var paramid = split[1];
-
-					var state = json['switch' + paramid][1];
-					me.log("key = " + key);
-					if(type == 'light') { //Light and heating/cooling state have the value in the same location
-						state = state != 0;
-						me.statusCallbacks[key]['callback'](null,state);
-					} else if(type == 'dimmable-light') {
-						if(state == 0) state = me.statusCallbacks[key]['prevvalue'];
-						me.statusCallbacks[key]['callback'](null,state);
-					} else if(type == 'temp') {
-						var string = json['switch' + paramid][5].troom_value;
-						state = me.getTempFromString(string);
-						me.statusCallbacks[key]['callback'](null,state);
-					} else if(type == 'heatingcoolingstate' || type == 'targetheatingcoolingstate') {
-						state = state ? 1 : 0; //Heating cooling uses 1/0 instead of true/false
-						me.statusCallbacks[key]['callback'](null,state);
-					} else if(type == 'targettemperature') {
-						var string =  json['switch' + paramid][5].temp_setpoint;
-						state = me.getTargetTempFromString(string);
-						me.statusCallbacks[key]['callback'](null,state);
-					}
-					me.log("status of " + key + " is " + state);
-				}
+				fallback = 0;
 			}
-			me.statusCallbacks = {}; //Reset the callbacks
-		});
+
+			try {
+				me.statusCallbacks[key]['callback'](null, fallback);
+			} catch (e) {
+				me.log('Error calling status callback for ' + key + ': ' + e.message);
+			}
+		}
+
+		me.statusCallbacks = {};
 	},
 
+
 	getTempFromString: function(string) {
+		// Eksempel på string: '.../>21.5°C'
 		var find1 = "/>";
 		var pos1 = string.indexOf(find1);
 		var pos2 = string.indexOf("\u00b0C");
-		var from = pos1+find1.length;
+
+		if (pos1 === -1 || pos2 === -1 || pos2 <= pos1) {
+			this.log('getTempFromString: unexpected format:', string);
+			return 20; // fallback
+		}
+
+		var from = pos1 + find1.length;
 		var to = pos2 - from;
-		return string.substr(from,to);
+		var value = string.substr(from, to).trim();
+		var num = parseFloat(value);
+
+		if (isNaN(num)) {
+			this.log('getTempFromString: could not parse number from:', value);
+			return 20;
+		}
+
+		return num;
 	},
 
 	getTargetTempFromString: function(string) {
+		// Eksempel på string: 'Heating setpoint 1 - 22.0°C'
 		var find1 = "Heating setpoint 1 - ";
 		var pos1 = string.indexOf(find1);
 		var pos2 = string.indexOf("\u00b0C");
-		var from = pos1+find1.length;
+
+		if (pos1 === -1 || pos2 === -1 || pos2 <= pos1) {
+			this.log('getTargetTempFromString: unexpected format:', string);
+			return 20; // fallback
+		}
+
+		var from = pos1 + find1.length;
 		var to = pos2 - from;
-		return string.substr(from,to);
-	}
+		var value = string.substr(from, to).trim();
+		var num = parseFloat(value);
+
+		if (isNaN(num)) {
+			this.log('getTargetTempFromString: could not parse number from:', value);
+			return 20;
+		}
+
+		return num;
+	},
 
 
 }
@@ -352,91 +349,54 @@ CGAccessory.prototype = {
 	getServices: function () {
 		var me = this;
 		var services = [];
+
+		// Obligatory Accessory Information
 		let informationService = new Service.AccessoryInformation();
 		informationService
-		.setCharacteristic(Characteristic.Manufacturer, "My switch manufacturer")
-		.setCharacteristic(Characteristic.Model, "My switch model")
-		.setCharacteristic(Characteristic.SerialNumber, "123-456-789");
+			.setCharacteristic(Characteristic.Manufacturer, "CG Smarthouse")
+			.setCharacteristic(Characteristic.Model, "CG Accessory")
+			.setCharacteristic(Characteristic.SerialNumber, "CG-" + (me.paramid || "0000"));
 
 		services.push(informationService);
 
-		if(me.type == "thermostat") {
+		// 🚫 Midlertidig: vi skipper thermostat og temperature-sensor helt
+		if (me.type === "thermostat" || me.type === "temperature-sensor") {
+			me.log("WARNING: type '" + me.type + "' er midlertidig deaktivert i getServices (dev-modus).");
+			// Vi returnerer bare AccessoryInformation, så HomeKit ikke ser noe “halvveis” service
+			return services;
+		}
 
-			var thermostatService = new Service.Thermostat(me.name);
-			thermostatService
-				.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-				.on('get',this.getCurrentHeatingCoolingState.bind(this));
+		let switchService;
 
-			thermostatService
-				.getCharacteristic(Characteristic.TargetHeatingCoolingState)
-				.on('get', this.getTargetHeatingCoolingState.bind(this))
-				.on('set', this.setTargetHeatingCoolingState.bind(this))
-				.setProps({ //Only heating supported at the moment
-					maxValue: 1,
-					minValue: 1,
-					validValues: [1]
-				});
+		// 💡 Lys
+		if (me.type === 'dimmable-light' || me.type === 'light') {
+			switchService = new Service.Lightbulb(me.name);
 
-			thermostatService
-				.getCharacteristic(Characteristic.CurrentTemperature)
-				.on('get', this.getCurrentTemperature.bind(this))
-				.setProps({
-					minValue: -50,
-					maxValue: 50,
-					minStep: 0.5
-				});
+		// 🔘 “Stateless” switch – vi behandler den bare som en vanlig switch her
+		} else if (me.type === 'stateless-switch') {
+			switchService = new Service.Switch(me.name);
 
-			thermostatService
-				.getCharacteristic(Characteristic.TargetTemperature)
-				.on('get', this.getTargetTemperature.bind(this))
-				.on('set', this.setTargetTemperature.bind(this));
-
-			thermostatService
-				.getCharacteristic(Characteristic.TemperatureDisplayUnits)
-				.on('get', this.getTemperatureDisplayUnits.bind(this))
-				.on('set', this.setTemperatureDisplayUnits.bind(this));
-
-			services.push(thermostatService);
-
-		} else if(me.type == "temperature-sensor") {
-			var temperatureService = new Service.TemperatureSensor(me.name);
-			temperatureService
-				.getCharacteristic(Characteristic.CurrentTemperature)
-				.on('get', this.getCurrentTemperature.bind(this))
-				.setProps({
-					minValue: -50,
-					maxValue: 50,
-					minStep: 0.1
-				});
-			services.push(temperatureService);
+		// 🔌 Default switch
 		} else {
-			if(me.type == 'dimmable-light' || me.type == 'light') {
-				var switchService = new Service.Lightbulb(me.name);
-			} else if(me.type == 'stateless-switch') {
-				var switchService = new Service.Switch(me.name,true);
-			} else {
-				var switchService = new Service.Switch(me.name);
-			}
+			switchService = new Service.Switch(me.name);
+		}
 
-			switchService
+		// On-characteristic – dette er obligatorisk og helt standard
+		switchService
 			.getCharacteristic(Characteristic.On)
 			.on('get', this.getSwitchOnCharacteristic.bind(this))
 			.on('set', this.setSwitchOnCharacteristic.bind(this));
 
-			if(me.type == 'dimmable-light') {
-				var brightnessChar = new Characteristic.Brightness;
-				switchService.getCharacteristic(Characteristic.Brightness)
-				.setProps({
-					minValue: 10
-				})
+		// Brightness for dimmable-light
+		if (me.type === 'dimmable-light') {
+			switchService
+				.getCharacteristic(Characteristic.Brightness)
+				// ingen minValue her – 0–100 er standard og HAP-trygt
 				.on('get', this.getSwitchBrightness.bind(this))
 				.on('set', this.setSwitchBrightness.bind(this));
-			}
-			services.push(switchService);
 		}
 
-
-
+		services.push(switchService);
 
 		return services;
 	}
