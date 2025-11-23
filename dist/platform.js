@@ -189,16 +189,11 @@ export class CGSmarthousePlatform {
         try {
             const homebridgeDir = this.api.user.storagePath();
             const accessoriesDir = path.join(homebridgeDir, 'accessories');
-            const persistDir = path.join(homebridgeDir, 'persist');
             if (fs.existsSync(accessoriesDir)) {
                 fs.rmSync(accessoriesDir, { recursive: true, force: true });
                 this.log.info('Cleared accessories cache directory');
             }
-            if (fs.existsSync(persistDir)) {
-                fs.rmSync(persistDir, { recursive: true, force: true });
-                this.log.info('Cleared persist cache directory');
-            }
-            this.log.info('Cache cleared successfully - starting with clean state');
+            this.log.info('Cache cleared successfully - HomeKit pairing preserved');
         }
         catch (error) {
             this.log.warn('Failed to clear cache on startup:', error);

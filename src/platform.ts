@@ -320,21 +320,15 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
     try {
       const homebridgeDir = this.api.user.storagePath();
       const accessoriesDir = path.join(homebridgeDir, 'accessories');
-      const persistDir = path.join(homebridgeDir, 'persist');
       
-      // Clear accessories cache
+      // Clear accessories cache only (preserve persist directory for HomeKit pairing)
       if (fs.existsSync(accessoriesDir)) {
         fs.rmSync(accessoriesDir, { recursive: true, force: true });
         this.log.info('Cleared accessories cache directory');
       }
       
-      // Clear persist cache
-      if (fs.existsSync(persistDir)) {
-        fs.rmSync(persistDir, { recursive: true, force: true });
-        this.log.info('Cleared persist cache directory');
-      }
-      
-      this.log.info('Cache cleared successfully - starting with clean state');
+      // Note: We intentionally preserve the persist directory to maintain HomeKit pairing
+      this.log.info('Cache cleared successfully - HomeKit pairing preserved');
       
     } catch (error) {
       this.log.warn('Failed to clear cache on startup:', error);
