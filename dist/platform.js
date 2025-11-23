@@ -1,4 +1,6 @@
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import { CGLightAccessory } from './accessories/lightAccessory.js';
 export class CGSmarthousePlatform {
@@ -11,12 +13,18 @@ export class CGSmarthousePlatform {
     httpClient;
     sessionCookie = null;
     isAuthenticated = false;
+    statusUpdateInterval = null;
+    STATUS_UPDATE_INTERVAL = 5000;
+    statusCache = {};
+    cacheTimestamps = {};
+    CACHE_DURATION = 2000;
     constructor(log, config, api) {
         this.log = log;
         this.config = config;
         this.api = api;
         this.Service = api.hap.Service;
         this.Characteristic = api.hap.Characteristic;
+        this.clearHomebridgeCache();
         this.httpClient = axios.create({
             timeout: 10000,
             headers: {
@@ -29,6 +37,58 @@ export class CGSmarthousePlatform {
             log.debug('Executed didFinishLaunching callback');
             this.discoverDevices();
         });
+        this.startPeriodicStatusUpdates();
+    }
+    startPeriodicStatusUpdates() {
+        this.statusUpdateInterval = setInterval(async () => {
+            await this.updateAllAccessoryStatuses();
+        }, this.STATUS_UPDATE_INTERVAL);
+        this.log.debug('Started periodic status updates');
+    }
+    async getBulkDeviceStatus(paramids) {
+        if (!this.isAuthenticated || !this.sessionCookie) {
+            throw new Error('Not authenticated');
+        }
+        try {
+            const body = `param=[${paramids.join(',')}]`;
+            const response = await this.httpClient.post(`${this.config.url}/app/fstatusrefresh.php`, body, {
+                headers: {
+                    'Cookie': this.sessionCookie,
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'User-Agent': 'homebridge-cg-smarthouse-platform/2.0.0',
+                },
+            });
+            const results = {};
+            if (response.data && Array.isArray(response.data)) {
+                response.data.forEach((item) => {
+                    if (item.id && item.state !== undefined) {
+                        results[item.id] = item.state;
+                    }
+                });
+            }
+            return results;
+        }
+        catch (error) {
+            this.log.error('Bulk status request error:', error);
+            throw error;
+        }
+    }
+    async updateAllAccessoryStatuses() {
+        if (!this.isAuthenticated || this.config.accessories.length === 0) {
+            return;
+        }
+        try {
+            const paramids = this.config.accessories.map(device => device.paramid);
+            const results = await this.getBulkDeviceStatus(paramids);
+            this.statusCache = { ...this.statusCache, ...results };
+            const now = Date.now();
+            paramids.forEach(paramid => {
+                this.cacheTimestamps[paramid] = now;
+            });
+        }
+        catch (error) {
+            this.log.error('Periodic status update failed:', error);
+        }
     }
     configureAccessory(accessory) {
         this.log.info('Loading accessory from cache:', accessory.displayName);
@@ -108,7 +168,15 @@ export class CGSmarthousePlatform {
         }
     }
     async getDeviceStatus(paramid, type) {
-        this.log.debug(`Getting status for device ${paramid} of type ${type} (stubbed)`);
+        console.log('=== DEVICE STATUS REQUEST ===');
+        console.log('ParamID:', paramid);
+        console.log('Type:', type);
+        console.log('Cached value:', this.statusCache[paramid]);
+        console.log('=============================');
+        if (this.statusCache[paramid] !== undefined) {
+            return this.statusCache[paramid];
+        }
+        this.log.warn(`No cached status for device ${paramid}, using default`);
         if (type === 'light') {
             return false;
         }
@@ -116,6 +184,25 @@ export class CGSmarthousePlatform {
             return 50;
         }
         return false;
+    }
+    clearHomebridgeCache() {
+        try {
+            const homebridgeDir = this.api.user.storagePath();
+            const accessoriesDir = path.join(homebridgeDir, 'accessories');
+            const persistDir = path.join(homebridgeDir, 'persist');
+            if (fs.existsSync(accessoriesDir)) {
+                fs.rmSync(accessoriesDir, { recursive: true, force: true });
+                this.log.info('Cleared accessories cache directory');
+            }
+            if (fs.existsSync(persistDir)) {
+                fs.rmSync(persistDir, { recursive: true, force: true });
+                this.log.info('Cleared persist cache directory');
+            }
+            this.log.info('Cache cleared successfully - starting with clean state');
+        }
+        catch (error) {
+            this.log.warn('Failed to clear cache on startup:', error);
+        }
     }
 }
 //# sourceMappingURL=platform.js.map

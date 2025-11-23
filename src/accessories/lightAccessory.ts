@@ -32,7 +32,9 @@ export class CGLightAccessory {
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Carlo Gavazzi')
       .setCharacteristic(this.platform.Characteristic.Model, 'CG Smarthouse')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, `CG-${this.deviceConfig.paramid}`);
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, `CG-${this.deviceConfig.paramid}`)
+      .setCharacteristic(this.platform.Characteristic.FirmwareRevision, '1.0.0')
+      .setCharacteristic(this.platform.Characteristic.HardwareRevision, '1.0.0');
 
     // Get the LightBulb service if it exists, otherwise create a new LightBulb service
     // You can create multiple services for each accessory
@@ -54,6 +56,11 @@ export class CGLightAccessory {
     // Register handlers for the Brightness Characteristic (only for dimmable lights)
     if (this.deviceConfig.type === 'dimmable-light') {
       this.service.getCharacteristic(this.platform.Characteristic.Brightness)
+        .setProps({
+          minValue: 0,
+          maxValue: 100,
+          minStep: 1,
+        })
         .onSet(this.setBrightness.bind(this))        // SET - bind to the 'setBrightness` method below
         .onGet(this.getBrightness.bind(this));       // GET - bind to the `getBrightness` method below
     }
@@ -83,102 +90,142 @@ export class CGLightAccessory {
   }
 
   /**
-   * Handle \"SET\" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue): Promise<void> {
+ * Handle "SET" requests from HomeKit
+ */
+async setOn(value: CharacteristicValue): Promise<void> {
+  try {
     const isOn = value as boolean;
     
-    this.platform.log.debug(`Set Characteristic On for ${this.deviceConfig.name} ->`, isOn);
-
-    try {
-      // For dimmable lights, turning on means setting to previous brightness (or 100% if it was 0)
-      if (this.deviceConfig.type === 'dimmable-light' && isOn && this.currentState.brightness === 0) {
-        this.currentState.brightness = 100;
-        await this.platform.sendCommand(this.deviceConfig.paramid, this.currentState.brightness);
-      } 
-      // For dimmable lights, turning off means setting brightness to 0
-      else if (this.deviceConfig.type === 'dimmable-light' && !isOn) {
-        this.currentState.brightness = 0;
-        await this.platform.sendCommand(this.deviceConfig.paramid, 0);
-      }
-      // For regular lights, just send on/off command
-      else if (this.deviceConfig.type === 'light') {
-        await this.platform.sendCommand(this.deviceConfig.paramid, isOn);
-      }
-
-      this.currentState.on = isOn;
-      this.platform.log.info(`${this.deviceConfig.name} turned ${isOn ? 'ON' : 'OFF'}`);
-      
-    } catch (error) {
-      this.platform.log.error(`Failed to set On state for ${this.deviceConfig.name}:`, error);
-      throw error; // Re-throw to let HomeKit know the operation failed
-    }
-  }
-
-  /**
-   * Handle the \"GET\" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   */
-  async getOn(): Promise<CharacteristicValue> {
-    try {
-      // For dimmable lights, on state is determined by brightness > 0
-      if (this.deviceConfig.type === 'dimmable-light') {
-        const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, 'dimmable-light');
-        this.currentState.brightness = typeof brightness === 'number' ? brightness : this.currentState.brightness;
-        this.currentState.on = this.currentState.brightness > 0;
-      } else {
-        const isOn = await this.platform.getDeviceStatus(this.deviceConfig.paramid, 'light');
-        this.currentState.on = Boolean(isOn);
-      }
-
-      this.platform.log.debug(`Get Characteristic On for ${this.deviceConfig.name} ->`, this.currentState.on);
-      return this.currentState.on;
-      
-    } catch (error) {
-      this.platform.log.error(`Failed to get On state for ${this.deviceConfig.name}:`, error);
-      return this.currentState.on; // Return cached state on error
-    }
-  }
-
-  /**
-   * Handle \"SET\" requests from HomeKit for Brightness
-   */
-  async setBrightness(value: CharacteristicValue): Promise<void> {
-    const brightness = value as number;
+    console.log('=== INCOMING HOMEKIT REQUEST ===');
+    console.log('Device:', this.deviceConfig.name);
+    console.log('Characteristic: On');
+    console.log('Operation: SET');
+    console.log('Value:', value);
+    console.log('================================');
     
-    this.platform.log.debug(`Set Characteristic Brightness for ${this.deviceConfig.name} ->`, brightness);
-
-    try {
-      await this.platform.sendCommand(this.deviceConfig.paramid, brightness);
-      this.currentState.brightness = brightness;
-      this.currentState.on = brightness > 0;
-
-      // Update the On characteristic to reflect the brightness change
-      this.service.updateCharacteristic(this.platform.Characteristic.On, this.currentState.on);
-      
-      this.platform.log.info(`${this.deviceConfig.name} brightness set to ${brightness}%`);
-      
-    } catch (error) {
-      this.platform.log.error(`Failed to set brightness for ${this.deviceConfig.name}:`, error);
-      throw error; // Re-throw to let HomeKit know the operation failed
+    // Update internal state immediately for responsiveness
+    this.currentState.on = isOn;
+    
+    // Send command to device
+    const success = await this.platform.sendCommand(this.deviceConfig.paramid, isOn ? 1 : 0);
+    if (!success) {
+      this.platform.log.warn(`Failed to send On command to ${this.deviceConfig.name}`);
     }
+    
+    this.platform.log.debug(`Set On for ${this.deviceConfig.name} to ${isOn}`);
+    
+  } catch (error) {
+    this.platform.log.error(`Error setting On for ${this.deviceConfig.name}:`, error);
+    // Don't throw errors to HomeKit to avoid compliance issues
+    // Just log the error and continue
   }
+}
 
-  /**
-   * Handle the \"GET\" requests from HomeKit for Brightness
-   */
-  async getBrightness(): Promise<CharacteristicValue> {
+/**
+ * Handle "GET" requests from HomeKit
+ */
+async getOn(): Promise<CharacteristicValue> {
+  try {
+    console.log('=== INCOMING HOMEKIT REQUEST ===');
+    console.log('Device:', this.deviceConfig.name);
+    console.log('Characteristic: On');
+    console.log('Operation: GET');
+    console.log('================================');
+
+    // Try to get fresh status, fall back to cached state
     try {
-      const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, 'dimmable-light');
-      this.currentState.brightness = typeof brightness === 'number' ? brightness : this.currentState.brightness;
-      
-      this.platform.log.debug(`Get Characteristic Brightness for ${this.deviceConfig.name} ->`, this.currentState.brightness);
-      return this.currentState.brightness;
-      
+      if (this.deviceConfig.type === 'dimmable-light') {
+        const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, this.deviceConfig.type) as number;
+        this.currentState.brightness = brightness;
+        this.currentState.on = brightness > 0;
+      } else {
+        this.currentState.on = await this.platform.getDeviceStatus(this.deviceConfig.paramid, this.deviceConfig.type) as boolean;
+      }
     } catch (error) {
-      this.platform.log.error(`Failed to get brightness for ${this.deviceConfig.name}:`, error);
-      return this.currentState.brightness; // Return cached state on error
+      this.platform.log.warn(`Failed to get fresh status for ${this.deviceConfig.name}, using cached value`);
     }
+
+    this.platform.log.debug(`Get On for ${this.deviceConfig.name}: ${this.currentState.on}`);
+    return this.currentState.on;
+    
+  } catch (error) {
+    this.platform.log.error(`Error getting On for ${this.deviceConfig.name}:`, error);
+    // Return cached value instead of throwing error
+    return this.currentState.on;
   }
+}
+
+/**
+ * Handle "SET" requests from HomeKit for Brightness
+ */
+async setBrightness(value: CharacteristicValue): Promise<void> {
+  try {
+    // Ensure we have a valid number and clamp to valid range
+    const rawBrightness = Number(value);
+    if (isNaN(rawBrightness)) {
+      this.platform.log.warn(`Invalid brightness value for ${this.deviceConfig.name}: ${value}`);
+      return;
+    }
+    
+    const brightness = Math.max(0, Math.min(100, rawBrightness));
+    
+    console.log('=== INCOMING HOMEKIT REQUEST ===');
+    console.log('Device:', this.deviceConfig.name);
+    console.log('Characteristic: Brightness');
+    console.log('Operation: SET');
+    console.log('Raw Value:', value);
+    console.log('Clamped Value:', brightness);
+    console.log('================================');
+    
+    // Update internal state
+    this.currentState.brightness = brightness;
+    this.currentState.on = brightness > 0;
+    
+    // Send command to device
+    const success = await this.platform.sendCommand(this.deviceConfig.paramid, brightness);
+    if (!success) {
+      this.platform.log.warn(`Failed to send Brightness command to ${this.deviceConfig.name}`);
+    }
+    
+    this.platform.log.debug(`Set Brightness for ${this.deviceConfig.name} to ${brightness}%`);
+    
+  } catch (error) {
+    this.platform.log.error(`Error setting Brightness for ${this.deviceConfig.name}:`, error);
+    // Don't throw errors to HomeKit to avoid compliance issues
+  }
+}
+
+/**
+ * Handle "GET" requests from HomeKit for Brightness
+ */
+async getBrightness(): Promise<CharacteristicValue> {
+  try {
+    console.log('=== INCOMING HOMEKIT REQUEST ===');
+    console.log('Device:', this.deviceConfig.name);
+    console.log('Characteristic: Brightness');
+    console.log('Operation: GET');
+    console.log('================================');
+
+    // Try to get fresh status, fall back to cached state
+    try {
+      const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, this.deviceConfig.type) as number;
+      if (typeof brightness === 'number' && !isNaN(brightness)) {
+        this.currentState.brightness = Math.max(0, Math.min(100, brightness)); // Ensure valid range
+        this.currentState.on = this.currentState.brightness > 0;
+      }
+    } catch (error) {
+      this.platform.log.warn(`Failed to get fresh brightness for ${this.deviceConfig.name}, using cached value`);
+    }
+
+    // Ensure we always return a valid brightness value
+    const validBrightness = Math.max(0, Math.min(100, this.currentState.brightness));
+    this.platform.log.debug(`Get Brightness for ${this.deviceConfig.name}: ${validBrightness}%`);
+    return validBrightness;
+    
+  } catch (error) {
+    this.platform.log.error(`Error getting Brightness for ${this.deviceConfig.name}:`, error);
+    // Return a safe default value
+    return this.currentState.brightness || 0;
+  }
+}
 }

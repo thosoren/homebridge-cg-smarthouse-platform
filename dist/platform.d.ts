@@ -10,12 +10,21 @@ export declare class CGSmarthousePlatform implements DynamicPlatformPlugin {
     private readonly httpClient;
     private sessionCookie;
     private isAuthenticated;
+    private statusUpdateInterval;
+    private readonly STATUS_UPDATE_INTERVAL;
+    private statusCache;
+    private cacheTimestamps;
+    private readonly CACHE_DURATION;
     constructor(log: Logging, config: PlatformConfig & CGSmarthouseConfig, api: API);
+    private startPeriodicStatusUpdates;
+    private getBulkDeviceStatus;
+    private updateAllAccessoryStatuses;
     configureAccessory(accessory: PlatformAccessory): void;
     discoverDevices(): Promise<void>;
     private createAccessoryHandler;
     private authenticate;
     sendCommand(paramid: number, value: number | boolean): Promise<boolean>;
     getDeviceStatus(paramid: number, type: string): Promise<number | boolean>;
+    private clearHomebridgeCache;
 }
 //# sourceMappingURL=platform.d.ts.map

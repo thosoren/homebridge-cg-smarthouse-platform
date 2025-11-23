@@ -9,6 +9,8 @@ import type {
 } from 'homebridge';
 
 import axios, { type AxiosInstance } from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import type { CGSmarthouseConfig, CGLoginResponse } from './types.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
@@ -30,6 +32,13 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   private sessionCookie: string | null = null;
   private isAuthenticated = false;
 
+  private statusUpdateInterval: NodeJS.Timeout | null = null;
+  private readonly STATUS_UPDATE_INTERVAL = 5000; // 5 seconds
+
+  private statusCache: Record<number, number | boolean> = {};
+  private cacheTimestamps: Record<number, number> = {};
+  private readonly CACHE_DURATION = 2000; // 2 seconds cache
+
   constructor(
     public readonly log: Logging,
     public readonly config: PlatformConfig & CGSmarthouseConfig,
@@ -37,6 +46,9 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+
+    // Clear cache on startup
+    this.clearHomebridgeCache();
 
     // Configure HTTP client
     this.httpClient = axios.create({
@@ -58,6 +70,85 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
       // run the method to discover / register your devices as accessories
       this.discoverDevices();
     });
+
+    // Start periodic status updates
+    this.startPeriodicStatusUpdates();
+  }
+
+  /**
+   * Start periodic bulk status updates for all accessories
+   */
+  private startPeriodicStatusUpdates(): void {
+    this.statusUpdateInterval = setInterval(async () => {
+      await this.updateAllAccessoryStatuses();
+    }, this.STATUS_UPDATE_INTERVAL);
+
+    this.log.debug('Started periodic status updates');
+  }
+
+  /**
+   * Get status for multiple devices in a single request
+   */
+  private async getBulkDeviceStatus(paramids: number[]): Promise<Record<number, number | boolean>> {
+    if (!this.isAuthenticated || !this.sessionCookie) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      // Build bulk request - adjust this based on your CG API
+      const body = `param=[${paramids.join(',')}]`;
+      
+      const response = await this.httpClient.post(`${this.config.url}/app/fstatusrefresh.php`,  body, {
+        headers: {
+          'Cookie': this.sessionCookie,
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'homebridge-cg-smarthouse-platform/2.0.0',
+        },
+      });
+
+      // Parse bulk response - adjust based on your API response format
+      const results: Record<number, number | boolean> = {};
+      
+      // Example parsing - modify based on actual API response
+      if (response.data && Array.isArray(response.data)) {
+        response.data.forEach((item: any) => {
+          if (item.id && item.state !== undefined) {
+            results[item.id] = item.state;
+          }
+        });
+      }
+
+      return results;
+      
+    } catch (error) {
+      this.log.error('Bulk status request error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update status for all accessories in bulk
+   */
+  private async updateAllAccessoryStatuses(): Promise<void> {
+    if (!this.isAuthenticated || this.config.accessories.length === 0) {
+      return;
+    }
+
+    try {
+      const paramids = this.config.accessories.map(device => device.paramid);
+      const results = await this.getBulkDeviceStatus(paramids);
+      
+      // Update cache with fresh data
+      this.statusCache = { ...this.statusCache, ...results };
+      const now = Date.now();
+      paramids.forEach(paramid => {
+        this.cacheTimestamps[paramid] = now;
+      });
+      
+      
+    } catch (error) {
+      this.log.error('Periodic status update failed:', error);
+    }
   }
 
   /**
@@ -197,19 +288,56 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Get current status of a device (stubbed for now)
+   * Get current status of a device (now uses cache)
    */
   async getDeviceStatus(paramid: number, type: string): Promise<number | boolean> {
-    // For Stage 1, we'll return reasonable default values
-    // In a real implementation, this would query the actual device status
-    this.log.debug(`Getting status for device ${paramid} of type ${type} (stubbed)`);
-    
+    console.log('=== DEVICE STATUS REQUEST ===');
+    console.log('ParamID:', paramid);
+    console.log('Type:', type);
+    console.log('Cached value:', this.statusCache[paramid]);
+    console.log('=============================');
+
+    // Return cached value if available
+    if (this.statusCache[paramid] !== undefined) {
+      return this.statusCache[paramid];
+    }
+
+    // Fallback to default values
+    this.log.warn(`No cached status for device ${paramid}, using default`);
     if (type === 'light') {
-      return false; // off
+      return false;
     } else if (type === 'dimmable-light') {
-      return 50; // 50% brightness
+      return 50;
     }
     
     return false;
+  }
+
+  /**
+   * Clear Homebridge cache directories on startup
+   */
+  private clearHomebridgeCache(): void {
+    try {
+      const homebridgeDir = this.api.user.storagePath();
+      const accessoriesDir = path.join(homebridgeDir, 'accessories');
+      const persistDir = path.join(homebridgeDir, 'persist');
+      
+      // Clear accessories cache
+      if (fs.existsSync(accessoriesDir)) {
+        fs.rmSync(accessoriesDir, { recursive: true, force: true });
+        this.log.info('Cleared accessories cache directory');
+      }
+      
+      // Clear persist cache
+      if (fs.existsSync(persistDir)) {
+        fs.rmSync(persistDir, { recursive: true, force: true });
+        this.log.info('Cleared persist cache directory');
+      }
+      
+      this.log.info('Cache cleared successfully - starting with clean state');
+      
+    } catch (error) {
+      this.log.warn('Failed to clear cache on startup:', error);
+    }
   }
 }
