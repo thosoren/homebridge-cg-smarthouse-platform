@@ -28,6 +28,9 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   // this is used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
 
+  // Track accessory handlers for status updates
+  private readonly accessoryHandlers: Map<number, any> = new Map();
+
   private readonly httpClient: AxiosInstance;
   private sessionCookie: string | null = null;
   private isAuthenticated = false;
@@ -95,10 +98,10 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
     }
 
     try {
-      // Build bulk request - adjust this based on your CG API
+      // Build bulk request for CG API
       const body = `param=[${paramids.join(',')}]`;
       
-      const response = await this.httpClient.post(`${this.config.url}/app/fstatusrefresh.php`,  body, {
+      const response = await this.httpClient.post(`${this.config.url}/app/fstatusrefresh.php`, body, {
         headers: {
           'Cookie': this.sessionCookie,
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -106,14 +109,24 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
         },
       });
 
-      // Parse bulk response - adjust based on your API response format
+      this.log.debug('Raw API response:', JSON.stringify(response.data));
+
+      // Parse CG response format
       const results: Record<number, number | boolean> = {};
       
-      // Example parsing - modify based on actual API response
       if (response.data && Array.isArray(response.data)) {
+        // CG API returns an array of objects with {id, state, value, ...}
+        // The 'state' field contains the brightness value (0-100)
+        // The 'id' field contains the paramid as a string
         response.data.forEach((item: any) => {
-          if (item.id && item.state !== undefined) {
-            results[item.id] = item.state;
+          if (item && typeof item === 'object' && item.id !== undefined && item.state !== undefined) {
+            const paramid = parseInt(item.id, 10);
+            const state = typeof item.state === 'number' ? item.state : parseInt(String(item.state), 10);
+            
+            if (!isNaN(paramid) && !isNaN(state)) {
+              results[paramid] = state;
+              this.log.debug(`Parsed device ${paramid}: state=${state}`);
+            }
           }
         });
       }
@@ -136,7 +149,25 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
 
     try {
       const paramids = this.config.accessories.map(device => device.paramid);
+      this.log.debug('Updating status for devices:', paramids);
+      
       const results = await this.getBulkDeviceStatus(paramids);
+
+      this.log.debug('Bulk status results:', results);
+      
+      // Check for changes and notify HomeKit
+      for (const [paramid, newValue] of Object.entries(results)) {
+        const paramidNum = parseInt(paramid, 10);
+        const oldValue = this.statusCache[paramidNum];
+
+        this.log.debug(`Device ${paramid} - Old: ${oldValue}, New: ${newValue}`);
+        
+        if (oldValue !== undefined && oldValue !== newValue) {
+          // Status changed - notify HomeKit
+          this.log.info(`Device ${paramid} status changed: ${oldValue} → ${newValue}`);
+          this.notifyAccessoryStatusChange(paramidNum, newValue);
+        }
+      }
       
       // Update cache with fresh data
       this.statusCache = { ...this.statusCache, ...results };
@@ -145,6 +176,7 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
         this.cacheTimestamps[paramid] = now;
       });
       
+      this.log.debug(`Updated status for ${Object.keys(results).length} devices`);
       
     } catch (error) {
       this.log.error('Periodic status update failed:', error);
@@ -225,9 +257,24 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
    */
   private createAccessoryHandler(accessory: PlatformAccessory, device: any): void {
     if (device.type === 'light' || device.type === 'dimmable-light') {
-      new CGLightAccessory(this, accessory);
+      const handler = new CGLightAccessory(this, accessory);
+      // Register handler for status updates
+      this.accessoryHandlers.set(device.paramid, handler);
     } else {
       this.log.warn('Unsupported device type:', device.type);
+    }
+  }
+
+  /**
+   * Notify specific accessory of status change
+   */
+  private notifyAccessoryStatusChange(paramid: number, newValue: number | boolean): void {
+    const handler = this.accessoryHandlers.get(paramid);
+    if (handler && typeof handler.updateFromExternalChange === 'function') {
+      this.log.debug(`Notifying accessory ${paramid} of status change to ${newValue}`);
+      handler.updateFromExternalChange(newValue);
+    } else {
+      this.log.warn(`No handler found for device ${paramid}`);
     }
   }
 

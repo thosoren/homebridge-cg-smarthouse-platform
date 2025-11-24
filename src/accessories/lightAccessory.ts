@@ -70,6 +70,46 @@ export class CGLightAccessory {
   }
 
   /**
+   * Handle external status changes (from physical switches)
+   */
+  updateFromExternalChange(newValue: number | boolean): void {
+    try {
+      if (this.deviceConfig.type === 'dimmable-light') {
+        const brightness = typeof newValue === 'number' ? Math.max(0, Math.min(100, newValue)) : 0;
+        const wasOn = this.currentState.on;
+        const wasBrightness = this.currentState.brightness;
+        
+        this.currentState.brightness = brightness;
+        this.currentState.on = brightness > 0;
+        
+        // Notify HomeKit of the changes
+        if (wasOn !== this.currentState.on) {
+          this.service.updateCharacteristic(this.platform.Characteristic.On, this.currentState.on);
+          this.platform.log.info(`🔄 HomeKit updated: ${this.deviceConfig.name} On = ${this.currentState.on}`);
+        }
+        
+        if (wasBrightness !== this.currentState.brightness) {
+          this.service.updateCharacteristic(this.platform.Characteristic.Brightness, this.currentState.brightness);
+          this.platform.log.info(`🔄 HomeKit updated: ${this.deviceConfig.name} Brightness = ${this.currentState.brightness}%`);
+        }
+      } else {
+        // Regular on/off light
+        const isOn = Boolean(newValue);
+        const wasOn = this.currentState.on;
+        
+        this.currentState.on = isOn;
+        
+        if (wasOn !== this.currentState.on) {
+          this.service.updateCharacteristic(this.platform.Characteristic.On, this.currentState.on);
+          this.platform.log.info(`🔄 HomeKit updated: ${this.deviceConfig.name} On = ${this.currentState.on}`);
+        }
+      }
+    } catch (error) {
+      this.platform.log.error(`Error updating external change for ${this.deviceConfig.name}:`, error);
+    }
+  }
+
+  /**
    * Initialize the accessory state from the device
    */
   private async initializeState(): Promise<void> {

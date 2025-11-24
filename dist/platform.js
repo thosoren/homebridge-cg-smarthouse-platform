@@ -10,6 +10,7 @@ export class CGSmarthousePlatform {
     Service;
     Characteristic;
     accessories = [];
+    accessoryHandlers = new Map();
     httpClient;
     sessionCookie = null;
     isAuthenticated = false;
@@ -58,11 +59,17 @@ export class CGSmarthousePlatform {
                     'User-Agent': 'homebridge-cg-smarthouse-platform/2.0.0',
                 },
             });
+            this.log.debug('Raw API response:', JSON.stringify(response.data));
             const results = {};
             if (response.data && Array.isArray(response.data)) {
                 response.data.forEach((item) => {
-                    if (item.id && item.state !== undefined) {
-                        results[item.id] = item.state;
+                    if (item && typeof item === 'object' && item.id !== undefined && item.state !== undefined) {
+                        const paramid = parseInt(item.id, 10);
+                        const state = typeof item.state === 'number' ? item.state : parseInt(String(item.state), 10);
+                        if (!isNaN(paramid) && !isNaN(state)) {
+                            results[paramid] = state;
+                            this.log.debug(`Parsed device ${paramid}: state=${state}`);
+                        }
                     }
                 });
             }
@@ -79,12 +86,24 @@ export class CGSmarthousePlatform {
         }
         try {
             const paramids = this.config.accessories.map(device => device.paramid);
+            this.log.debug('Updating status for devices:', paramids);
             const results = await this.getBulkDeviceStatus(paramids);
+            this.log.debug('Bulk status results:', results);
+            for (const [paramid, newValue] of Object.entries(results)) {
+                const paramidNum = parseInt(paramid, 10);
+                const oldValue = this.statusCache[paramidNum];
+                this.log.debug(`Device ${paramid} - Old: ${oldValue}, New: ${newValue}`);
+                if (oldValue !== undefined && oldValue !== newValue) {
+                    this.log.info(`Device ${paramid} status changed: ${oldValue} → ${newValue}`);
+                    this.notifyAccessoryStatusChange(paramidNum, newValue);
+                }
+            }
             this.statusCache = { ...this.statusCache, ...results };
             const now = Date.now();
             paramids.forEach(paramid => {
                 this.cacheTimestamps[paramid] = now;
             });
+            this.log.debug(`Updated status for ${Object.keys(results).length} devices`);
         }
         catch (error) {
             this.log.error('Periodic status update failed:', error);
@@ -118,10 +137,21 @@ export class CGSmarthousePlatform {
     }
     createAccessoryHandler(accessory, device) {
         if (device.type === 'light' || device.type === 'dimmable-light') {
-            new CGLightAccessory(this, accessory);
+            const handler = new CGLightAccessory(this, accessory);
+            this.accessoryHandlers.set(device.paramid, handler);
         }
         else {
             this.log.warn('Unsupported device type:', device.type);
+        }
+    }
+    notifyAccessoryStatusChange(paramid, newValue) {
+        const handler = this.accessoryHandlers.get(paramid);
+        if (handler && typeof handler.updateFromExternalChange === 'function') {
+            this.log.debug(`Notifying accessory ${paramid} of status change to ${newValue}`);
+            handler.updateFromExternalChange(newValue);
+        }
+        else {
+            this.log.warn(`No handler found for device ${paramid}`);
         }
     }
     async authenticate() {

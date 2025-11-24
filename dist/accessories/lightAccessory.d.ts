@@ -7,6 +7,7 @@ export declare class CGLightAccessory {
     private readonly deviceConfig;
     private currentState;
     constructor(platform: CGSmarthousePlatform, accessory: PlatformAccessory);
+    updateFromExternalChange(newValue: number | boolean): void;
     private initializeState;
     setOn(value: CharacteristicValue): Promise<void>;
     getOn(): Promise<CharacteristicValue>;

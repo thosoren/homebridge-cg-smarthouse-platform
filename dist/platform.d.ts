@@ -7,6 +7,7 @@ export declare class CGSmarthousePlatform implements DynamicPlatformPlugin {
     readonly Service: typeof Service;
     readonly Characteristic: typeof Characteristic;
     readonly accessories: PlatformAccessory[];
+    private readonly accessoryHandlers;
     private readonly httpClient;
     private sessionCookie;
     private isAuthenticated;
@@ -22,6 +23,7 @@ export declare class CGSmarthousePlatform implements DynamicPlatformPlugin {
     configureAccessory(accessory: PlatformAccessory): void;
     discoverDevices(): Promise<void>;
     private createAccessoryHandler;
+    private notifyAccessoryStatusChange;
     private authenticate;
     sendCommand(paramid: number, value: number | boolean): Promise<boolean>;
     getDeviceStatus(paramid: number, type: string): Promise<number | boolean>;
