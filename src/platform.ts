@@ -109,7 +109,7 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
         },
       });
 
-      this.log.debug('Raw API response:', JSON.stringify(response.data));
+      //this.log.debug('Raw API response:', JSON.stringify(response.data));
 
       // Parse CG response format
       const results: Record<number, number | boolean> = {};
@@ -125,7 +125,7 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
             
             if (!isNaN(paramid) && !isNaN(state)) {
               results[paramid] = state;
-              this.log.debug(`Parsed device ${paramid}: state=${state}`);
+              //this.log.debug(`Parsed device ${paramid}: state=${state}`);
             }
           }
         });
@@ -149,22 +149,17 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
 
     try {
       const paramids = this.config.accessories.map(device => device.paramid);
-      this.log.debug('Updating status for devices:', paramids);
+      //this.log.debug('Updating status for devices:', paramids);
       
       const results = await this.getBulkDeviceStatus(paramids);
-
-      this.log.debug('Bulk status results:', results);
       
       // Check for changes and notify HomeKit
       for (const [paramid, newValue] of Object.entries(results)) {
         const paramidNum = parseInt(paramid, 10);
         const oldValue = this.statusCache[paramidNum];
-
-        this.log.debug(`Device ${paramid} - Old: ${oldValue}, New: ${newValue}`);
         
         if (oldValue !== undefined && oldValue !== newValue) {
           // Status changed - notify HomeKit
-          this.log.info(`Device ${paramid} status changed: ${oldValue} → ${newValue}`);
           this.notifyAccessoryStatusChange(paramidNum, newValue);
         }
       }
@@ -175,9 +170,7 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
       paramids.forEach(paramid => {
         this.cacheTimestamps[paramid] = now;
       });
-      
-      this.log.debug(`Updated status for ${Object.keys(results).length} devices`);
-      
+            
     } catch (error) {
       this.log.error('Periodic status update failed:', error);
     }

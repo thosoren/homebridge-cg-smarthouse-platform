@@ -59,7 +59,6 @@ export class CGSmarthousePlatform {
                     'User-Agent': 'homebridge-cg-smarthouse-platform/2.0.0',
                 },
             });
-            this.log.debug('Raw API response:', JSON.stringify(response.data));
             const results = {};
             if (response.data && Array.isArray(response.data)) {
                 response.data.forEach((item) => {
@@ -68,7 +67,6 @@ export class CGSmarthousePlatform {
                         const state = typeof item.state === 'number' ? item.state : parseInt(String(item.state), 10);
                         if (!isNaN(paramid) && !isNaN(state)) {
                             results[paramid] = state;
-                            this.log.debug(`Parsed device ${paramid}: state=${state}`);
                         }
                     }
                 });
@@ -86,15 +84,11 @@ export class CGSmarthousePlatform {
         }
         try {
             const paramids = this.config.accessories.map(device => device.paramid);
-            this.log.debug('Updating status for devices:', paramids);
             const results = await this.getBulkDeviceStatus(paramids);
-            this.log.debug('Bulk status results:', results);
             for (const [paramid, newValue] of Object.entries(results)) {
                 const paramidNum = parseInt(paramid, 10);
                 const oldValue = this.statusCache[paramidNum];
-                this.log.debug(`Device ${paramid} - Old: ${oldValue}, New: ${newValue}`);
                 if (oldValue !== undefined && oldValue !== newValue) {
-                    this.log.info(`Device ${paramid} status changed: ${oldValue} → ${newValue}`);
                     this.notifyAccessoryStatusChange(paramidNum, newValue);
                 }
             }
@@ -103,7 +97,6 @@ export class CGSmarthousePlatform {
             paramids.forEach(paramid => {
                 this.cacheTimestamps[paramid] = now;
             });
-            this.log.debug(`Updated status for ${Object.keys(results).length} devices`);
         }
         catch (error) {
             this.log.error('Periodic status update failed:', error);
