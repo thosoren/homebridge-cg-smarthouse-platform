@@ -25,7 +25,7 @@ export declare class CGSmarthousePlatform implements DynamicPlatformPlugin {
     private createAccessoryHandler;
     private notifyAccessoryStatusChange;
     private authenticate;
-    sendCommand(paramid: number, value: number | boolean): Promise<boolean>;
+    sendCommand(paramid: number, value: number | boolean, deviceType?: string): Promise<boolean>;
     getDeviceStatus(paramid: number, type: string): Promise<number | boolean>;
     private clearHomebridgeCache;
 }

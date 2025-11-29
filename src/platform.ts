@@ -301,26 +301,46 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   /**
    * Send a command to control a device
    */
-  async sendCommand(paramid: number, value: number | boolean): Promise<boolean> {
+  async sendCommand(paramid: number, value: number | boolean, deviceType?: string): Promise<boolean> {
     if (!this.isAuthenticated || !this.sessionCookie) {
       this.log.error('Not authenticated, cannot send command');
       return false;
     }
 
     try {
-      const command = typeof value === 'boolean' ? (value ? '1' : '0') : value.toString();
-      const body = `param=${paramid}&value=${command}&st=1&op=5`;
+      // On/off lights use /app/toogle.php, dimmable lights use /app/command.php
+      const isOnOffLight = deviceType === 'light';
       
-      this.log.debug(`Sending command: paramid=${paramid}, value=${command}`);
+      if (isOnOffLight) {
+        // For on/off lights, use toggle endpoint
+        const body = `param=${paramid}`;
+        
+        this.log.debug(`Sending toggle command: paramid=${paramid}`);
 
-      const response = await this.httpClient.post(`${this.config.url}/app/command.php`, body, {
-        headers: {
-          'Cookie': this.sessionCookie,
-        },
-      });
+        const response = await this.httpClient.post(`${this.config.url}/app/toogle.php`, body, {
+          headers: {
+            'Cookie': this.sessionCookie,
+          },
+        });
 
-      this.log.debug('Command response:', response.status);
-      return response.status === 200;
+        this.log.debug('Toggle command response:', response.status);
+        return response.status === 200;
+      } else {
+        // For dimmable lights, use command endpoint with value
+        const command = typeof value === 'boolean' ? (value ? '1' : '0') : value.toString();
+        const body = `param=${paramid}&value=${command}&st=1&op=5`;
+        
+        this.log.debug(`Sending command: paramid=${paramid}, value=${command}`);
+
+        const response = await this.httpClient.post(`${this.config.url}/app/command.php`, body, {
+          headers: {
+            'Cookie': this.sessionCookie,
+          },
+        });
+
+        this.log.debug('Command response:', response.status);
+        return response.status === 200;
+      }
     } catch (error) {
       this.log.error('Command error:', error);
       return false;

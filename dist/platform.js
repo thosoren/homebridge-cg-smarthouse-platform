@@ -168,22 +168,36 @@ export class CGSmarthousePlatform {
             this.isAuthenticated = false;
         }
     }
-    async sendCommand(paramid, value) {
+    async sendCommand(paramid, value, deviceType) {
         if (!this.isAuthenticated || !this.sessionCookie) {
             this.log.error('Not authenticated, cannot send command');
             return false;
         }
         try {
-            const command = typeof value === 'boolean' ? (value ? '1' : '0') : value.toString();
-            const body = `param=${paramid}&value=${command}&st=1&op=5`;
-            this.log.debug(`Sending command: paramid=${paramid}, value=${command}`);
-            const response = await this.httpClient.post(`${this.config.url}/app/command.php`, body, {
-                headers: {
-                    'Cookie': this.sessionCookie,
-                },
-            });
-            this.log.debug('Command response:', response.status);
-            return response.status === 200;
+            const isOnOffLight = deviceType === 'light';
+            if (isOnOffLight) {
+                const body = `param=${paramid}`;
+                this.log.debug(`Sending toggle command: paramid=${paramid}`);
+                const response = await this.httpClient.post(`${this.config.url}/app/toogle.php`, body, {
+                    headers: {
+                        'Cookie': this.sessionCookie,
+                    },
+                });
+                this.log.debug('Toggle command response:', response.status);
+                return response.status === 200;
+            }
+            else {
+                const command = typeof value === 'boolean' ? (value ? '1' : '0') : value.toString();
+                const body = `param=${paramid}&value=${command}&st=1&op=5`;
+                this.log.debug(`Sending command: paramid=${paramid}, value=${command}`);
+                const response = await this.httpClient.post(`${this.config.url}/app/command.php`, body, {
+                    headers: {
+                        'Cookie': this.sessionCookie,
+                    },
+                });
+                this.log.debug('Command response:', response.status);
+                return response.status === 200;
+            }
         }
         catch (error) {
             this.log.error('Command error:', error);

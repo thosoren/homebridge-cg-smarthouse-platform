@@ -93,7 +93,7 @@ export class CGLightAccessory {
             console.log('Value:', value);
             console.log('================================');
             this.currentState.on = isOn;
-            const success = await this.platform.sendCommand(this.deviceConfig.paramid, isOn ? 1 : 0);
+            const success = await this.platform.sendCommand(this.deviceConfig.paramid, isOn ? 1 : 0, this.deviceConfig.type);
             if (!success) {
                 this.platform.log.warn(`Failed to send On command to ${this.deviceConfig.name}`);
             }
@@ -148,7 +148,7 @@ export class CGLightAccessory {
             console.log('================================');
             this.currentState.brightness = brightness;
             this.currentState.on = brightness > 0;
-            const success = await this.platform.sendCommand(this.deviceConfig.paramid, brightness);
+            const success = await this.platform.sendCommand(this.deviceConfig.paramid, brightness, this.deviceConfig.type);
             if (!success) {
                 this.platform.log.warn(`Failed to send Brightness command to ${this.deviceConfig.name}`);
             }
