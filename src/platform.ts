@@ -36,7 +36,12 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   private isAuthenticated = false;
 
   private statusUpdateInterval: NodeJS.Timeout | null = null;
-  private readonly STATUS_UPDATE_INTERVAL = 5000; // 5 seconds
+  private readonly FAST_POLLING_INTERVAL = 1000; // 1 second when active
+  private readonly SLOW_POLLING_INTERVAL = 60000; // 1 minute when idle
+  private readonly FAST_POLLING_DURATION = 120000; // 2 minutes of fast polling
+  private currentPollingInterval = 60000; // Start with slow polling
+  private lastHomekitRequestTime = 0;
+  private isInFastPollingMode = false;
 
   private statusCache: Record<number, number | boolean> = {};
   private cacheTimestamps: Record<number, number> = {};
@@ -84,9 +89,62 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
   private startPeriodicStatusUpdates(): void {
     this.statusUpdateInterval = setInterval(async () => {
       await this.updateAllAccessoryStatuses();
-    }, this.STATUS_UPDATE_INTERVAL);
+      this.adjustPollingInterval();
+    }, this.currentPollingInterval);
 
     this.log.debug('Started periodic status updates');
+  }
+
+  /**
+   * Switch to fast polling mode when HomeKit is actively requesting status
+   */
+  private activateFastPolling(): void {
+    const now = Date.now();
+    this.lastHomekitRequestTime = now;
+
+    // Only restart interval if we're not already in fast polling mode
+    if (!this.isInFastPollingMode) {
+      this.isInFastPollingMode = true;
+      this.currentPollingInterval = this.FAST_POLLING_INTERVAL;
+      
+      // Clear existing interval and restart with fast polling
+      if (this.statusUpdateInterval) {
+        clearInterval(this.statusUpdateInterval);
+      }
+      
+      this.statusUpdateInterval = setInterval(async () => {
+        await this.updateAllAccessoryStatuses();
+        this.adjustPollingInterval();
+      }, this.FAST_POLLING_INTERVAL);
+      
+      this.log.info('🚀 Switched to fast polling mode (1 second intervals)');
+    }
+  }
+
+  /**
+   * Adjust polling interval based on HomeKit activity
+   */
+  private adjustPollingInterval(): void {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastHomekitRequestTime;
+
+    // If we've been in fast mode for more than 2 minutes without new requests, switch to slow mode
+    if (this.isInFastPollingMode && timeSinceLastRequest > this.FAST_POLLING_DURATION) {
+      this.isInFastPollingMode = false;
+      this.currentPollingInterval = this.SLOW_POLLING_INTERVAL;
+      
+      // Clear existing interval and restart with slow polling
+      if (this.statusUpdateInterval) {
+        clearInterval(this.statusUpdateInterval);
+      }
+      
+      this.statusUpdateInterval = setInterval(async () => {
+        await this.updateAllAccessoryStatuses();
+        this.adjustPollingInterval();
+      }, this.SLOW_POLLING_INTERVAL);
+      
+      this.log.info('🐌 Switched to slow polling mode (1 minute interval)');
+    }
   }
 
   /**
@@ -200,6 +258,11 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
       this.log.error('Authentication failed, cannot discover devices');
       return;
     }
+
+    // Fetch initial status for all devices to populate cache
+    this.log.info('Fetching initial device statuses...');
+    await this.updateAllAccessoryStatuses();
+    this.log.info(`Initial status cache populated with ${Object.keys(this.statusCache).length} devices`);
 
     // Loop through the configured accessories and register each one if it has not already been registered
     for (const device of this.config.accessories) {
@@ -351,11 +414,14 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
    * Get current status of a device (now uses cache)
    */
   async getDeviceStatus(paramid: number, type: string): Promise<number | boolean> {
-    console.log('=== DEVICE STATUS REQUEST ===');
-    console.log('ParamID:', paramid);
-    console.log('Type:', type);
-    console.log('Cached value:', this.statusCache[paramid]);
-    console.log('=============================');
+    // console.log('=== DEVICE STATUS REQUEST ===');
+    // console.log('ParamID:', paramid);
+    // console.log('Type:', type);
+    // console.log('Cached value:', this.statusCache[paramid]);
+    // console.log('=============================');
+
+    // Activate fast polling when HomeKit requests status
+    this.activateFastPolling();
 
     // Return cached value if available
     if (this.statusCache[paramid] !== undefined) {
@@ -381,11 +447,14 @@ export class CGSmarthousePlatform implements DynamicPlatformPlugin {
       const homebridgeDir = this.api.user.storagePath();
       const accessoriesDir = path.join(homebridgeDir, 'accessories');
       
-      // Clear accessories cache only (preserve persist directory for HomeKit pairing)
+      // Clear and recreate accessories directory (preserve persist directory for HomeKit pairing)
       if (fs.existsSync(accessoriesDir)) {
         fs.rmSync(accessoriesDir, { recursive: true, force: true });
-        this.log.info('Cleared accessories cache directory');
       }
+      
+      // Recreate the directory so Homebridge can save cached accessories
+      fs.mkdirSync(accessoriesDir, { recursive: true });
+      this.log.info('Cleared accessories cache directory');
       
       // Note: We intentionally preserve the persist directory to maintain HomeKit pairing
       this.log.info('Cache cleared successfully - HomeKit pairing preserved');

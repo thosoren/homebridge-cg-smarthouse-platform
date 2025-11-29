@@ -86,12 +86,6 @@ export class CGLightAccessory {
     async setOn(value) {
         try {
             const isOn = value;
-            console.log('=== INCOMING HOMEKIT REQUEST ===');
-            console.log('Device:', this.deviceConfig.name);
-            console.log('Characteristic: On');
-            console.log('Operation: SET');
-            console.log('Value:', value);
-            console.log('================================');
             this.currentState.on = isOn;
             const success = await this.platform.sendCommand(this.deviceConfig.paramid, isOn ? 1 : 0, this.deviceConfig.type);
             if (!success) {
@@ -105,11 +99,6 @@ export class CGLightAccessory {
     }
     async getOn() {
         try {
-            console.log('=== INCOMING HOMEKIT REQUEST ===');
-            console.log('Device:', this.deviceConfig.name);
-            console.log('Characteristic: On');
-            console.log('Operation: GET');
-            console.log('================================');
             try {
                 if (this.deviceConfig.type === 'dimmable-light') {
                     const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, this.deviceConfig.type);
@@ -160,11 +149,6 @@ export class CGLightAccessory {
     }
     async getBrightness() {
         try {
-            console.log('=== INCOMING HOMEKIT REQUEST ===');
-            console.log('Device:', this.deviceConfig.name);
-            console.log('Characteristic: Brightness');
-            console.log('Operation: GET');
-            console.log('================================');
             try {
                 const brightness = await this.platform.getDeviceStatus(this.deviceConfig.paramid, this.deviceConfig.type);
                 if (typeof brightness === 'number' && !isNaN(brightness)) {

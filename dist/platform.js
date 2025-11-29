@@ -15,7 +15,12 @@ export class CGSmarthousePlatform {
     sessionCookie = null;
     isAuthenticated = false;
     statusUpdateInterval = null;
-    STATUS_UPDATE_INTERVAL = 5000;
+    FAST_POLLING_INTERVAL = 1000;
+    SLOW_POLLING_INTERVAL = 60000;
+    FAST_POLLING_DURATION = 120000;
+    currentPollingInterval = 60000;
+    lastHomekitRequestTime = 0;
+    isInFastPollingMode = false;
     statusCache = {};
     cacheTimestamps = {};
     CACHE_DURATION = 2000;
@@ -43,8 +48,41 @@ export class CGSmarthousePlatform {
     startPeriodicStatusUpdates() {
         this.statusUpdateInterval = setInterval(async () => {
             await this.updateAllAccessoryStatuses();
-        }, this.STATUS_UPDATE_INTERVAL);
+            this.adjustPollingInterval();
+        }, this.currentPollingInterval);
         this.log.debug('Started periodic status updates');
+    }
+    activateFastPolling() {
+        const now = Date.now();
+        this.lastHomekitRequestTime = now;
+        if (!this.isInFastPollingMode) {
+            this.isInFastPollingMode = true;
+            this.currentPollingInterval = this.FAST_POLLING_INTERVAL;
+            if (this.statusUpdateInterval) {
+                clearInterval(this.statusUpdateInterval);
+            }
+            this.statusUpdateInterval = setInterval(async () => {
+                await this.updateAllAccessoryStatuses();
+                this.adjustPollingInterval();
+            }, this.FAST_POLLING_INTERVAL);
+            this.log.info('🚀 Switched to fast polling mode (1 second intervals)');
+        }
+    }
+    adjustPollingInterval() {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastHomekitRequestTime;
+        if (this.isInFastPollingMode && timeSinceLastRequest > this.FAST_POLLING_DURATION) {
+            this.isInFastPollingMode = false;
+            this.currentPollingInterval = this.SLOW_POLLING_INTERVAL;
+            if (this.statusUpdateInterval) {
+                clearInterval(this.statusUpdateInterval);
+            }
+            this.statusUpdateInterval = setInterval(async () => {
+                await this.updateAllAccessoryStatuses();
+                this.adjustPollingInterval();
+            }, this.SLOW_POLLING_INTERVAL);
+            this.log.info('🐌 Switched to slow polling mode (1 minute interval)');
+        }
     }
     async getBulkDeviceStatus(paramids) {
         if (!this.isAuthenticated || !this.sessionCookie) {
@@ -112,6 +150,9 @@ export class CGSmarthousePlatform {
             this.log.error('Authentication failed, cannot discover devices');
             return;
         }
+        this.log.info('Fetching initial device statuses...');
+        await this.updateAllAccessoryStatuses();
+        this.log.info(`Initial status cache populated with ${Object.keys(this.statusCache).length} devices`);
         for (const device of this.config.accessories) {
             const uuid = this.api.hap.uuid.generate(device.paramid.toString());
             const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
@@ -205,11 +246,7 @@ export class CGSmarthousePlatform {
         }
     }
     async getDeviceStatus(paramid, type) {
-        console.log('=== DEVICE STATUS REQUEST ===');
-        console.log('ParamID:', paramid);
-        console.log('Type:', type);
-        console.log('Cached value:', this.statusCache[paramid]);
-        console.log('=============================');
+        this.activateFastPolling();
         if (this.statusCache[paramid] !== undefined) {
             return this.statusCache[paramid];
         }
@@ -228,8 +265,9 @@ export class CGSmarthousePlatform {
             const accessoriesDir = path.join(homebridgeDir, 'accessories');
             if (fs.existsSync(accessoriesDir)) {
                 fs.rmSync(accessoriesDir, { recursive: true, force: true });
-                this.log.info('Cleared accessories cache directory');
             }
+            fs.mkdirSync(accessoriesDir, { recursive: true });
+            this.log.info('Cleared accessories cache directory');
             this.log.info('Cache cleared successfully - HomeKit pairing preserved');
         }
         catch (error) {

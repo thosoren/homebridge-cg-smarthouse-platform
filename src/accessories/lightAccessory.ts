@@ -136,12 +136,12 @@ async setOn(value: CharacteristicValue): Promise<void> {
   try {
     const isOn = value as boolean;
     
-    console.log('=== INCOMING HOMEKIT REQUEST ===');
-    console.log('Device:', this.deviceConfig.name);
-    console.log('Characteristic: On');
-    console.log('Operation: SET');
-    console.log('Value:', value);
-    console.log('================================');
+    // console.log('=== INCOMING HOMEKIT REQUEST ===');
+    // console.log('Device:', this.deviceConfig.name);
+    // console.log('Characteristic: On');
+    // console.log('Operation: SET');
+    // console.log('Value:', value);
+    // console.log('================================');
     
     // Update internal state immediately for responsiveness
     this.currentState.on = isOn;
@@ -166,11 +166,11 @@ async setOn(value: CharacteristicValue): Promise<void> {
  */
 async getOn(): Promise<CharacteristicValue> {
   try {
-    console.log('=== INCOMING HOMEKIT REQUEST ===');
-    console.log('Device:', this.deviceConfig.name);
-    console.log('Characteristic: On');
-    console.log('Operation: GET');
-    console.log('================================');
+    // console.log('=== INCOMING HOMEKIT REQUEST ===');
+    // console.log('Device:', this.deviceConfig.name);
+    // console.log('Characteristic: On');
+    // console.log('Operation: GET');
+    // console.log('================================');
 
     // Try to get fresh status, fall back to cached state
     try {
@@ -240,11 +240,11 @@ async setBrightness(value: CharacteristicValue): Promise<void> {
  */
 async getBrightness(): Promise<CharacteristicValue> {
   try {
-    console.log('=== INCOMING HOMEKIT REQUEST ===');
-    console.log('Device:', this.deviceConfig.name);
-    console.log('Characteristic: Brightness');
-    console.log('Operation: GET');
-    console.log('================================');
+    // console.log('=== INCOMING HOMEKIT REQUEST ===');
+    // console.log('Device:', this.deviceConfig.name);
+    // console.log('Characteristic: Brightness');
+    // console.log('Operation: GET');
+    // console.log('================================');
 
     // Try to get fresh status, fall back to cached state
     try {
